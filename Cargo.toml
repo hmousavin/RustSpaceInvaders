@@ -1,0 +1,20 @@
+[package]
+name = "spaceInvaders"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "0.15.3", features = ["dynamic_linking"] }
+
+[profile.dev]
+opt-level = 0 # Speeds up compile time (lower performance in-game)
+debug = true
+split-debuginfo = "unpacked" # On Linux/macOS for faster linking
+incremental = true
+
+[profile.release]
+opt-level = "z"     # or 3 (highest perf), "z" for smallest size
+lto = true          # Link Time Optimization - higher perf, longer compile
+codegen-units = 1   # Slower compile, better optimization
+panic = "abort"     # Optional: smaller binary, no panic info
+strip = true        # Remove symbols from binary (Linux/macOS only)
