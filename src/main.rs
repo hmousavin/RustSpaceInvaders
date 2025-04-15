@@ -1,25 +1,60 @@
+use std::ops::Mul;
+
 use bevy::{
-    prelude::*, render::{settings::{Backends, RenderCreation, WgpuSettings}, RenderPlugin}, window::{ExitCondition, WindowResolution}
+    prelude::*,
+    render::{
+        settings::{Backends, RenderCreation, WgpuSettings},
+        RenderPlugin,
+    },
+    window::ExitCondition,
 };
 
-const SCREEN_WIDTH: f32 = 800.;
-const SCREEN_HEIGHT: f32 = 600.;
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
+    let window = windows.single(); // assumes one window
+    let screen_width = window.resolution.width();
+    let screen_height = window.resolution.height();
+    let margin_top: f32 = screen_height / 30.;
+    let margin_bottom: f32 = screen_height / 30.;
+    let sprite_pad: f32 = screen_width / 10.;
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2d);
 
-    let image_paths = [
-        "player_38.png",
-        "green_3.png",
-        "red_5.png",
-        "yellow_5.png",
-    ];
+    let bottom = (-screen_height / 2.) + margin_bottom;
+    commands.spawn((
+        Sprite::from_image(asset_server.load("player_38.png")),
+        Transform::from_xyz(0., bottom, 0.),
+    ));
 
-    for (_, path) in image_paths.iter().enumerate() {
-        commands.spawn(Sprite::from_image(
-            asset_server.load(*path),
+    for i in -3..4 {
+        commands.spawn((
+            Sprite::from_image(asset_server.load("green_3.png")),
+            Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(8.), 0.),
+        ));
+
+        commands.spawn((
+            Sprite::from_image(asset_server.load("yellow_5.png")),
+            Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(4.), 0.),
+        ));
+
+        commands.spawn((
+            Sprite::from_image(asset_server.load("red_5.png")),
+            Transform::from_xyz(sprite_pad.mul(i as f32), margin_top, 0.),
         ));
     }
+
+    commands.spawn((
+        Sprite::from_image(asset_server.load("white_arrow.png")),
+        Transform::from_xyz(0., -margin_bottom.mul(2.), 0.),
+    ));
+
+    commands.spawn((
+        Sprite::from_image(asset_server.load("extra.png")),
+        Transform::from_xyz(
+            (-screen_width / 2.) + sprite_pad, // just for demonstraction
+            (screen_height / 2.) - sprite_pad,
+            0.,
+        ),
+    ));
 }
 
 fn main() {
@@ -34,19 +69,11 @@ fn main() {
                     synchronous_pipeline_compilation: false,
                 })
                 .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        resolution: WindowResolution::new(
-                            SCREEN_WIDTH,
-                            SCREEN_HEIGHT,
-                        )
-                        .with_scale_factor_override(1.0),
-                        ..default()
-                    }),
                     exit_condition: ExitCondition::OnPrimaryClosed,
                     close_when_requested: true,
+                    ..Default::default()
                 }),
         )
-        // .add_plugins(GizmoPlugin)
         .add_systems(Startup, setup)
         .run();
 }
