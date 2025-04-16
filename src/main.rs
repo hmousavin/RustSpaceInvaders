@@ -53,7 +53,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<
 
     let bottom = (-screen_height / 2.) + margin_bottom;
     commands.spawn((
-        Sprite::from_image(asset_server.load("player_38.png")),
+        Sprite::from_image(asset_server.load("cannon.png")),
         Transform::from_xyz(0., bottom, 0.),
         Cannon {
             lives: 3,
@@ -63,7 +63,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<
 
     for i in -3..4 {
         commands.spawn((
-            Sprite::from_image(asset_server.load("green_3.png")),
+            Sprite::from_image(asset_server.load("squid.png")),
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(8.), 0.),
             Alien {
                 kind_of: AlienType::Squid,
@@ -73,7 +73,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<
         ));
 
         commands.spawn((
-            Sprite::from_image(asset_server.load("yellow_5.png")),
+            Sprite::from_image(asset_server.load("crab.png")),
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(4.), 0.),
             Alien {
                 kind_of: AlienType::Crab,
@@ -83,7 +83,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<
         ));
 
         commands.spawn((
-            Sprite::from_image(asset_server.load("red_5.png")),
+            Sprite::from_image(asset_server.load("octopus.png")),
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top, 0.),
             Alien {
                 kind_of: AlienType::Octopus,
@@ -94,13 +94,13 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<
     }
 
     commands.spawn((
-        Sprite::from_image(asset_server.load("white_arrow.png")),
+        Sprite::from_image(asset_server.load("cannon_ball.png")),
         Transform::from_xyz(0., -margin_bottom.mul(2.), 0.),
         CannonBall,
     ));
 
     commands.spawn((
-        Sprite::from_image(asset_server.load("extra.png")),
+        Sprite::from_image(asset_server.load("ufo.png")),
         Transform::from_xyz(
             (-screen_width / 2.) + sprite_pad, // just for demonstraction
             (screen_height / 2.) - sprite_pad,
