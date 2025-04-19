@@ -62,6 +62,16 @@ fn get_ball_bounding_box(ball_type: BallType) -> BoundingBox {
     bb
 }
 
+#[derive(PartialEq, Eq)]
+enum Direction {
+    Left, Right
+}
+
+#[derive(Resource)]
+struct AlienMoveDirection {
+    dir: Direction
+}
+
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<&Window>) {
     let screen_width = window.resolution.width();
     let screen_height = window.resolution.height();
@@ -144,9 +154,28 @@ fn handle_inputs(
 
 fn refresh_aliens(
     mut alien_transforms: Query<&mut Transform, With<Alien>>,
+    mut alien_direction: ResMut<AlienMoveDirection>, 
+    window: Single<&Window>,
 ) {
+    let screen_left = -window.width() / 2.;
+    let screen_right = window.width() / 2.;
+    
     for mut transform in alien_transforms.iter_mut() {
-        transform.translation.x += 2.;
+        if alien_direction.dir == Direction::Right && transform.translation.x + 20. >= screen_right {
+            alien_direction.dir = Direction::Left;
+            break;
+        }
+        if alien_direction.dir == Direction::Left && transform.translation.x - 20. <= screen_left {
+            alien_direction.dir = Direction::Right;
+            break;
+        }
+    
+        if alien_direction.dir == Direction::Left {
+            transform.translation.x -= 2.;
+        }
+        else {
+            transform.translation.x += 2.;
+        }
     }
 }
 
@@ -223,6 +252,7 @@ fn main() {
                     ..Default::default()
                 }),
         )
+        .insert_resource(AlienMoveDirection{dir: Direction::Right})
         .add_systems(Startup, setup)
         .add_systems(Update, (handle_inputs, refresh_aliens, refresh_balls, check_collisions))
         .run();
