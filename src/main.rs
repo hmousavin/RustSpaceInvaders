@@ -10,28 +10,26 @@ use bevy::{
 const CANNON_STEP: f32 = 10.;
 
 #[derive(Component)]
-struct Position {
-    x: f32,
-    y: f32,
+struct BoundingBox {
+    width: f32,
+    height: f32
 }
 
 #[derive(Component)]
 struct Cannon {
-    pos: Position,
-    lives: u8,
 }
 
+#[derive(Copy, Clone)]
 enum BallType {
     CannonBall,
-    AlienBall,
 }
 
 #[derive(Component)]
 struct Ball {
     kind_of: BallType,
-    pos: Position, 
 }
 
+#[derive(Copy, Clone)]
 enum AlienType {
     Squid,
     Crab,
@@ -42,9 +40,26 @@ enum AlienType {
 #[derive(Component)]
 struct Alien {
     kind_of: AlienType,
-    pos: Position,
-    is_alive: bool,
     // score_value: u32, // should be randomized: 50, 100, 150, 300
+}
+
+fn get_alien_bounding_box(alien_type: AlienType) -> BoundingBox {
+    let bb =  match alien_type {
+        AlienType::Squid => BoundingBox { width: 40., height: 32. },
+        AlienType::Crab => BoundingBox { width: 40., height: 32. },
+        AlienType::Octopus => BoundingBox { width: 40., height: 32. },
+        AlienType::UFO => BoundingBox { width: 40., height: 20. },
+    };
+
+    bb
+}
+
+fn get_ball_bounding_box(ball_type: BallType) -> BoundingBox {
+    let bb = match ball_type {
+        BallType::CannonBall => BoundingBox { width: 4., height: 10. },
+    };
+
+    bb
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<&Window>) {
@@ -60,10 +75,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
     commands.spawn((
         Sprite::from_image(asset_server.load("cannon.png")),
         Transform::from_xyz(0., bottom, 0.),
-        Cannon {
-            pos: Position { x: 0., y: bottom },
-            lives: 3,
-        },
+        Cannon{}
     ));
 
     for i in -3..4 {
@@ -72,11 +84,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(8.), 0.),
             Alien {
                 kind_of: AlienType::Squid,
-                pos: Position {
-                    x: sprite_pad.mul(i as f32),
-                    y: margin_top.mul(8.),
-                },
-                is_alive: true,
             },
         ));
 
@@ -85,11 +92,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(4.), 0.),
             Alien {
                 kind_of: AlienType::Crab,
-                pos: Position {
-                    x: sprite_pad.mul(i as f32),
-                    y: margin_top.mul(4.),
-                },
-                is_alive: true,
             },
         ));
 
@@ -98,23 +100,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top, 0.),
             Alien {
                 kind_of: AlienType::Octopus,
-                pos: Position {
-                    x: sprite_pad.mul(i as f32),
-                    y: margin_top,
-                },
-                is_alive: true,
             },
         ));
     }
-
-    commands.spawn((
-        Sprite::from_image(asset_server.load("cannon_ball.png")),
-        Transform::from_xyz(0., -margin_bottom.mul(2.), 0.),
-        Ball {
-            kind_of: BallType::CannonBall,
-            pos: Position { x: 0., y: -margin_bottom.mul(2.) }
-        },
-    ));
 
     commands.spawn((
         Sprite::from_image(asset_server.load("ufo.png")),
@@ -125,11 +113,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
         ),
         Alien {
             kind_of: AlienType::UFO,
-            pos: Position {
-                x: (-screen_width / 2.) + sprite_pad, // just for demonstraction
-                y: (screen_height / 2.) - sprite_pad,
-            },
-            is_alive: true,
         }
     ));
 }
@@ -137,28 +120,23 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
 fn handle_inputs(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut cannon_transform: Single<&mut Transform, With<Cannon>>,
-    mut cannon: Single<&mut Cannon>,
     mut commands: Commands,
     asset_server: Res<AssetServer>, 
 ) {
-
     if keyboard_input.pressed(KeyCode::ArrowLeft) {
         cannon_transform.translation.x -= CANNON_STEP;
-        cannon.pos.x -= CANNON_STEP;
     }
 
     if keyboard_input.pressed(KeyCode::ArrowRight) {
         cannon_transform.translation.x += CANNON_STEP;
-        cannon.pos.x += CANNON_STEP;
     }
 
     if keyboard_input.just_pressed(KeyCode::Space) {
         commands.spawn((
             Sprite::from_image(asset_server.load("cannon_ball.png")),
-            Transform::from_xyz(cannon.pos.x, cannon.pos.y+20., 0.),
+            Transform::from_xyz(cannon_transform.translation.x, cannon_transform.translation.y+20., 0.),
             Ball {
                 kind_of: BallType::CannonBall,
-                pos: Position{x:cannon.pos.x, y:cannon.pos.y+20.},
             },
         ));
     }
@@ -166,10 +144,7 @@ fn handle_inputs(
 
 fn refresh_aliens(
     mut alien_transforms: Query<&mut Transform, With<Alien>>,
-    // window: Single<&Window>,
 ) {
-    // let half_width = window.width();
-
     for mut transform in alien_transforms.iter_mut() {
         transform.translation.x += 2.;
     }
@@ -184,7 +159,7 @@ fn refresh_balls(
         // Move the ball
         transform.translation.y += match ball.kind_of {
             BallType::CannonBall => 5.0,
-            BallType::AlienBall => -5.0,
+            // BallType::AlienBall => -5.0,
         };
 
         // Despawn if off screen
@@ -196,17 +171,32 @@ fn refresh_balls(
     }
 }
 
+// an implementation of Axis-Aligned Bounding Box
 fn check_collisions(
     mut commands: Commands,
-    balls: Query<(Entity, &Transform), With<Ball>>,
-    aliens: Query<(Entity, &Transform), With<Alien>>,
+    balls: Query<(Entity, &Transform, &Ball)>,
+    aliens: Query<(Entity, &Transform, &Alien)>,
 ) {
-    for (ball_entity, ball_transform) in balls.iter() {
-        for (alien_entity, alien_transform) in aliens.iter() {
-            if ball_transform
-                .translation
-                .distance(alien_transform.translation)
-                < 5.0
+    for (ball_entity, ball_transform, ball) in balls.iter() {
+        for (alien_entity, alien_transform, alien) in aliens.iter() {
+
+            let ball_pos = ball_transform.translation;
+            let alien_pos = alien_transform.translation;
+
+            let ball_min_x = ball_pos.x - get_ball_bounding_box(ball.kind_of.clone()).width / 2.0;
+            let ball_max_x = ball_pos.x + get_ball_bounding_box(ball.kind_of.clone()).width / 2.0;
+            let ball_min_y = ball_pos.y - get_ball_bounding_box(ball.kind_of.clone()).height / 2.0;
+            let ball_max_y = ball_pos.y + get_ball_bounding_box(ball.kind_of.clone()).height / 2.0;
+
+            let alien_min_x = alien_pos.x - get_alien_bounding_box(alien.kind_of).width / 2.0;
+            let alien_max_x = alien_pos.x + get_alien_bounding_box(alien.kind_of).width / 2.0;
+            let alien_min_y = alien_pos.y - get_alien_bounding_box(alien.kind_of).height / 2.0;
+            let alien_max_y = alien_pos.y + get_alien_bounding_box(alien.kind_of).height / 2.0;
+
+            if ball_min_x < alien_max_x &&
+            ball_max_x > alien_min_x &&
+            ball_min_y < alien_max_y &&
+            ball_max_y > alien_min_y
             {
                 commands.entity(alien_entity).despawn();
                 commands.entity(ball_entity).despawn();
