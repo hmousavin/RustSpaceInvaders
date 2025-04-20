@@ -1,4 +1,4 @@
-use std::ops::{Add, Mul};
+use std::{ops::Mul, time::Duration};
 
 use bevy::{
     prelude::*,
@@ -8,6 +8,7 @@ use bevy::{
     },
     window::ExitCondition,
 };
+use rand::seq::IndexedRandom;
 
 const CANNON_STEP: f32 = 10.;
 
@@ -20,9 +21,10 @@ struct BoundingBox {
 #[derive(Component)]
 struct Cannon {}
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 enum BallType {
     CannonBall,
+    AlienBall
 }
 
 #[derive(Component)]
@@ -69,7 +71,7 @@ fn get_alien_bounding_box(alien_type: AlienType) -> BoundingBox {
 
 fn get_ball_bounding_box(ball_type: BallType) -> BoundingBox {
     let bb = match ball_type {
-        BallType::CannonBall => BoundingBox {
+        BallType::CannonBall | BallType::AlienBall => BoundingBox {
             width: 4.,
             height: 10.,
         },
@@ -87,6 +89,11 @@ enum Direction {
 #[derive(Resource)]
 struct AlienMoveDirection {
     dir: Direction,
+}
+
+#[derive(Resource)]
+struct AlienWaitToShoot {
+    secs: Timer,
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<&Window>) {
@@ -152,13 +159,13 @@ fn handle_inputs(
     window: Single<&Window>,
 ) {
     if keyboard_input.pressed(KeyCode::ArrowLeft) {
-        if -window.width()/2. < cannon_transform.translation.x - CANNON_STEP {
+        if -window.width() / 2. < cannon_transform.translation.x - CANNON_STEP {
             cannon_transform.translation.x -= CANNON_STEP;
         }
     }
 
     if keyboard_input.pressed(KeyCode::ArrowRight) {
-        if cannon_transform.translation.x + CANNON_STEP < window.width()/2. {
+        if cannon_transform.translation.x + CANNON_STEP < window.width() / 2. {
             cannon_transform.translation.x += CANNON_STEP;
         }
     }
@@ -204,6 +211,31 @@ fn refresh_aliens(
     }
 }
 
+fn aliens_attack(
+    mut commands: Commands,
+    mut shoot_timer: ResMut<AlienWaitToShoot>,
+    time: Res<Time>,
+    aliens_query: Query<(&Transform, Entity), With<Alien>>,
+    asset_server: Res<AssetServer>,
+) {
+    shoot_timer.secs.tick(time.delta());
+
+    if shoot_timer.secs.just_finished() {
+        let mut rng = rand::rng();
+        let aliens: Vec<(&Transform, Entity)> = aliens_query.iter().collect();
+
+        if let Some((transform, alien_entity)) = aliens.choose(&mut rng) {
+            commands.spawn((
+                Sprite::from_image(asset_server.load("alien_ball.png")),
+                Transform::from_xyz(transform.translation.x, transform.translation.y - 25.0, 0.0),
+                Ball {
+                    kind_of: BallType::AlienBall, 
+                },
+            ));
+        }
+    }
+}
+
 fn refresh_balls(
     mut commands: Commands,
     mut balls: Query<(Entity, &Ball, &mut Transform)>,
@@ -213,7 +245,7 @@ fn refresh_balls(
         // Move the ball
         transform.translation.y += match ball.kind_of {
             BallType::CannonBall => 5.0,
-            // BallType::AlienBall => -5.0,
+            BallType::AlienBall => -5.0,
         };
 
         // Despawn if off screen
@@ -230,33 +262,70 @@ fn check_collisions(
     mut commands: Commands,
     balls: Query<(Entity, &Transform, &Ball)>,
     aliens: Query<(Entity, &Transform, &Alien)>,
+    single_cannon: Single<(Entity, &Transform, &Cannon)>,
 ) {
     for (ball_entity, ball_transform, ball) in balls.iter() {
-        for (alien_entity, alien_transform, alien) in aliens.iter() {
-            let ball_pos = ball_transform.translation;
-            let alien_pos = alien_transform.translation;
+        let ball_pos = ball_transform.translation;
 
-            let ball_min_x = ball_pos.x - get_ball_bounding_box(ball.kind_of.clone()).width / 2.0;
-            let ball_max_x = ball_pos.x + get_ball_bounding_box(ball.kind_of.clone()).width / 2.0;
-            let ball_min_y = ball_pos.y - get_ball_bounding_box(ball.kind_of.clone()).height / 2.0;
-            let ball_max_y = ball_pos.y + get_ball_bounding_box(ball.kind_of.clone()).height / 2.0;
+        let ball_min_x = ball_pos.x - get_ball_bounding_box(ball.kind_of.clone()).width / 2.0;
+        let ball_max_x = ball_pos.x + get_ball_bounding_box(ball.kind_of.clone()).width / 2.0;
+        let ball_min_y = ball_pos.y - get_ball_bounding_box(ball.kind_of.clone()).height / 2.0;
+        let ball_max_y = ball_pos.y + get_ball_bounding_box(ball.kind_of.clone()).height / 2.0;
 
-            let alien_min_x = alien_pos.x - get_alien_bounding_box(alien.kind_of).width / 2.0;
-            let alien_max_x = alien_pos.x + get_alien_bounding_box(alien.kind_of).width / 2.0;
-            let alien_min_y = alien_pos.y - get_alien_bounding_box(alien.kind_of).height / 2.0;
-            let alien_max_y = alien_pos.y + get_alien_bounding_box(alien.kind_of).height / 2.0;
+        match ball.kind_of {
+            BallType::CannonBall => {
+                for (alien_entity, alien_transform, alien) in aliens.iter() {
+                    let alien_pos = alien_transform.translation;
+                
+                    let alien_min_x = alien_pos.x - get_alien_bounding_box(alien.kind_of).width / 2.0;
+                    let alien_max_x = alien_pos.x + get_alien_bounding_box(alien.kind_of).width / 2.0;
+                    let alien_min_y = alien_pos.y - get_alien_bounding_box(alien.kind_of).height / 2.0;
+                    let alien_max_y = alien_pos.y + get_alien_bounding_box(alien.kind_of).height / 2.0;
+        
+                    if aabb_collision(ball_min_x, ball_max_x, ball_min_y, ball_max_y, alien_min_x, alien_max_x, alien_min_y, alien_max_y) {
+                        commands.entity(alien_entity).despawn();
+                        commands.entity(ball_entity).despawn();
+                        break;
+                    }
+                }
+            },
 
-            if ball_min_x < alien_max_x
-                && ball_max_x > alien_min_x
-                && ball_min_y < alien_max_y
-                && ball_max_y > alien_min_y
-            {
-                commands.entity(alien_entity).despawn();
-                commands.entity(ball_entity).despawn();
-                break; // prevent double-despawning same ball
+            BallType::AlienBall => {
+                let (_cannon_entity, cannon_transform, _cannon) = single_cannon.clone();
+                let cannon_pos = cannon_transform.translation;
+
+                let cannon_bb = BoundingBox {
+                    width: 40.0,
+                    height: 32.0,
+                }; // Replace with actual values if you store them
+
+                let cannon_min_x = cannon_pos.x - cannon_bb.width / 2.0;
+                let cannon_max_x = cannon_pos.x + cannon_bb.width / 2.0;
+                let cannon_min_y = cannon_pos.y - cannon_bb.height / 2.0;
+                let cannon_max_y = cannon_pos.y + cannon_bb.height / 2.0;
+
+                if aabb_collision(ball_min_x, ball_max_x, ball_min_y, ball_max_y, cannon_min_x, cannon_max_x, cannon_min_y, cannon_max_y) {
+                    info!("Oh my god! The cannon lost a live! ");
+                    // commands.entity(_cannon_entity).despawn();
+                    commands.entity(ball_entity).despawn();
+                    break;
+                }
             }
         }
+
     }
+}
+
+fn aabb_collision(ball_min_x: f32, ball_max_x: f32, ball_min_y: f32, ball_max_y: f32, alien_min_x: f32, alien_max_x: f32, alien_min_y: f32, alien_max_y: f32) -> bool {
+    if ball_min_x < alien_max_x
+        && ball_max_x > alien_min_x
+        && ball_min_y < alien_max_y
+        && ball_max_y > alien_min_y
+    {
+        return true;
+    }
+
+    false
 }
 
 fn main() {
@@ -279,15 +348,19 @@ fn main() {
         .insert_resource(AlienMoveDirection {
             dir: Direction::Right,
         })
+        .insert_resource(AlienWaitToShoot {
+            secs: Timer::new(Duration::from_secs(3), TimerMode::Repeating),
+        })
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
                 handle_inputs,
                 refresh_aliens,
+                aliens_attack,
                 refresh_balls,
                 check_collisions,
             ),
         )
         .run();
-}
+} 
