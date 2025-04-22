@@ -19,12 +19,15 @@ struct BoundingBox {
 }
 
 #[derive(Component)]
-struct Cannon {}
+struct Cannon {
+    lives: usize,
+    score: usize,
+}
 
 #[derive(Copy, Clone, PartialEq)]
 enum BallType {
     CannonBall,
-    AlienBall
+    AlienBall,
 }
 
 #[derive(Component)]
@@ -43,7 +46,7 @@ enum AlienType {
 #[derive(Component)]
 struct Alien {
     kind_of: AlienType,
-    // score_value: u32, // should be randomized: 50, 100, 150, 300
+    // score_value: usize, // should be randomized: 50, 100, 150, 300
 }
 
 fn get_alien_bounding_box(alien_type: AlienType) -> BoundingBox {
@@ -96,6 +99,21 @@ struct AlienWaitToShoot {
     secs: Timer,
 }
 
+#[derive(PartialEq, Eq)]
+enum EventTypes {
+    CannonLives,
+    Score,
+}
+
+#[derive(Event)]
+struct HudEvent(EventTypes, usize);
+
+#[derive(Component)]
+struct HudLivesText;
+
+#[derive(Component)]
+struct HudScoreText;
+
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<&Window>) {
     let screen_width = window.resolution.width();
     let screen_height = window.resolution.height();
@@ -109,7 +127,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
     commands.spawn((
         Sprite::from_image(asset_server.load("cannon.png")),
         Transform::from_xyz(0., bottom, 0.),
-        Cannon {},
+        Cannon { lives: 3, score: 0 },
     ));
 
     for i in -3..4 {
@@ -149,6 +167,20 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
             kind_of: AlienType::UFO,
         },
     ));
+
+    let hud_root = commands
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Px(30.0),
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            ..default()
+        })
+        .id();
+
+    let lives = commands.spawn((Text::new("lives: 3"), HudLivesText)).id();
+    let score = commands.spawn((Text::new("score: 0"), HudScoreText)).id();
+    commands.entity(hud_root).add_children(&[lives, score]);
 }
 
 fn handle_inputs(
@@ -224,12 +256,12 @@ fn aliens_attack(
         let mut rng = rand::rng();
         let aliens: Vec<(&Transform, Entity)> = aliens_query.iter().collect();
 
-        if let Some((transform, alien_entity)) = aliens.choose(&mut rng) {
+        if let Some((transform, _)) = aliens.choose(&mut rng) {
             commands.spawn((
                 Sprite::from_image(asset_server.load("alien_ball.png")),
                 Transform::from_xyz(transform.translation.x, transform.translation.y - 25.0, 0.0),
                 Ball {
-                    kind_of: BallType::AlienBall, 
+                    kind_of: BallType::AlienBall,
                 },
             ));
         }
@@ -262,7 +294,8 @@ fn check_collisions(
     mut commands: Commands,
     balls: Query<(Entity, &Transform, &Ball)>,
     aliens: Query<(Entity, &Transform, &Alien)>,
-    single_cannon: Single<(Entity, &Transform, &Cannon)>,
+    mut single_cannon: Single<(Entity, &Transform, &mut Cannon)>,
+    mut event_writer: EventWriter<HudEvent>,
 ) {
     for (ball_entity, ball_transform, ball) in balls.iter() {
         let ball_pos = ball_transform.translation;
@@ -276,22 +309,38 @@ fn check_collisions(
             BallType::CannonBall => {
                 for (alien_entity, alien_transform, alien) in aliens.iter() {
                     let alien_pos = alien_transform.translation;
-                
-                    let alien_min_x = alien_pos.x - get_alien_bounding_box(alien.kind_of).width / 2.0;
-                    let alien_max_x = alien_pos.x + get_alien_bounding_box(alien.kind_of).width / 2.0;
-                    let alien_min_y = alien_pos.y - get_alien_bounding_box(alien.kind_of).height / 2.0;
-                    let alien_max_y = alien_pos.y + get_alien_bounding_box(alien.kind_of).height / 2.0;
-        
-                    if aabb_collision(ball_min_x, ball_max_x, ball_min_y, ball_max_y, alien_min_x, alien_max_x, alien_min_y, alien_max_y) {
+
+                    let alien_min_x =
+                        alien_pos.x - get_alien_bounding_box(alien.kind_of).width / 2.0;
+                    let alien_max_x =
+                        alien_pos.x + get_alien_bounding_box(alien.kind_of).width / 2.0;
+                    let alien_min_y =
+                        alien_pos.y - get_alien_bounding_box(alien.kind_of).height / 2.0;
+                    let alien_max_y =
+                        alien_pos.y + get_alien_bounding_box(alien.kind_of).height / 2.0;
+
+                    if aabb_collision(
+                        ball_min_x,
+                        ball_max_x,
+                        ball_min_y,
+                        ball_max_y,
+                        alien_min_x,
+                        alien_max_x,
+                        alien_min_y,
+                        alien_max_y,
+                    ) {
                         commands.entity(alien_entity).despawn();
                         commands.entity(ball_entity).despawn();
+
+                        single_cannon.2.score += 10;
+                        event_writer.send(HudEvent(EventTypes::Score, single_cannon.2.score));
                         break;
                     }
                 }
-            },
+            }
 
             BallType::AlienBall => {
-                let (_cannon_entity, cannon_transform, _cannon) = single_cannon.clone();
+                let (_, cannon_transform, cannon) = &mut *single_cannon;
                 let cannon_pos = cannon_transform.translation;
 
                 let cannon_bb = BoundingBox {
@@ -304,19 +353,42 @@ fn check_collisions(
                 let cannon_min_y = cannon_pos.y - cannon_bb.height / 2.0;
                 let cannon_max_y = cannon_pos.y + cannon_bb.height / 2.0;
 
-                if aabb_collision(ball_min_x, ball_max_x, ball_min_y, ball_max_y, cannon_min_x, cannon_max_x, cannon_min_y, cannon_max_y) {
-                    info!("Oh my god! The cannon lost a live! ");
-                    // commands.entity(_cannon_entity).despawn();
+                if aabb_collision(
+                    ball_min_x,
+                    ball_max_x,
+                    ball_min_y,
+                    ball_max_y,
+                    cannon_min_x,
+                    cannon_max_x,
+                    cannon_min_y,
+                    cannon_max_y,
+                ) {
                     commands.entity(ball_entity).despawn();
+
+                    if cannon.lives > 0 {
+                        cannon.lives = cannon.lives - 1;
+                        event_writer.send(HudEvent(EventTypes::CannonLives, cannon.lives));
+                    }
+                    else {
+                        warn!("Game over!");
+                    }
                     break;
                 }
             }
         }
-
     }
 }
 
-fn aabb_collision(ball_min_x: f32, ball_max_x: f32, ball_min_y: f32, ball_max_y: f32, alien_min_x: f32, alien_max_x: f32, alien_min_y: f32, alien_max_y: f32) -> bool {
+fn aabb_collision(
+    ball_min_x: f32,
+    ball_max_x: f32,
+    ball_min_y: f32,
+    ball_max_y: f32,
+    alien_min_x: f32,
+    alien_max_x: f32,
+    alien_min_y: f32,
+    alien_max_y: f32,
+) -> bool {
     if ball_min_x < alien_max_x
         && ball_max_x > alien_min_x
         && ball_min_y < alien_max_y
@@ -326,6 +398,29 @@ fn aabb_collision(ball_min_x: f32, ball_max_x: f32, ball_min_y: f32, ball_max_y:
     }
 
     false
+}
+
+fn refresh_hud(
+    mut ev_list: EventReader<HudEvent>,
+    mut text_params: ParamSet<(
+        Query<&mut Text, With<HudLivesText>>,
+        Query<&mut Text, With<HudScoreText>>,
+    )>,
+) {
+    for HudEvent(e_type, e_val) in ev_list.read() {
+        match e_type {
+            EventTypes::CannonLives => {
+                if let Ok(mut text) = text_params.p0().get_single_mut() {
+                    text.0 = format!("lives: {}", e_val);
+                }
+            }
+            EventTypes::Score => {
+                if let Ok(mut text) = text_params.p1().get_single_mut() {
+                    text.0 = format!("score: {}", e_val);
+                }
+            }
+        }
+    }
 }
 
 fn main() {
@@ -351,6 +446,7 @@ fn main() {
         .insert_resource(AlienWaitToShoot {
             secs: Timer::new(Duration::from_secs(3), TimerMode::Repeating),
         })
+        .add_event::<HudEvent>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -359,8 +455,9 @@ fn main() {
                 refresh_aliens,
                 aliens_attack,
                 refresh_balls,
-                check_collisions,
+                refresh_hud,
             ),
         )
+        .add_systems(FixedUpdate, check_collisions)
         .run();
-} 
+}
