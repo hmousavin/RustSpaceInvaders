@@ -1,0 +1,87 @@
+Awesome! Glad it worked.
+
+You're off to a great start. Here's a list of essential and common features that will take your game from a basic prototype to a more complete and fun experience. I'll group them by **core gameplay**, **feedback**, and **polish/improvement** levels:
+
+---
+
+### ✅ **What you already have**:
+- Cannon movement  
+- Cannon ball shooting  
+- Static aliens  
+- Sprite loading  
+- Collision detection  
+- Ball cleanup when off-screen  
+
+---
+
+### 🎯 **Core Gameplay Features to Add** (next essentials):
+
+1. **Alien Movement Pattern**
+   ✅ Make aliens move horizontally and bounce back (classic Space Invaders feel).
+   ❌ Drop down a row each time they hit screen edge.
+
+2. **Alien Firing Mechanism**
+   ✅ Aliens shoot projectiles (AlienBall) at intervals or randomly.
+   ✅ Cannon loses life when hit.
+
+3. **Lives and Game Over**
+   ✅ Track cannon's lives.
+   - Display game over when all lives are lost or when aliens reach the bottom.
+
+4. **Win Condition**
+   - Win when all aliens are eliminated.
+   - Show "You Win" screen or message.
+
+5. **Score System**
+   ✅ Add a score counter.
+   - Different alien types can give different scores.
+
+6. **Levels or Waves**
+   - After clearing aliens, spawn new wave with different patterns, speed, or more complexity.
+
+---
+
+### 🔊 **Feedback & Polish Features**:
+
+1. **Sound Effects**
+   - Shooting, alien hit, cannon destroyed, etc.
+
+2. **Explosion / Death Animation**
+   - When aliens or the cannon are destroyed, show a brief animation or effect.
+
+3. **UI Elements**
+   - Score display.
+   - Lives left.
+   - Start / Pause / Game Over screen.
+
+4. **Title Screen / Restart Option**
+   - Press a key to start or restart the game.
+   - Add main menu state handling.
+
+---
+
+### 🧠 **Improvement Ideas / Extra Challenge**:
+
+1. **Power-ups**
+   - Randomly drop power-ups like "double-shot", "shield", etc.
+
+2. **Alien Behavior Variety**
+   - UFO flies occasionally across the top for bonus score.
+   - Some aliens dodge or move faster.
+
+3. **Difficulty Scaling**
+   - Speed up alien movement per wave.
+   - Add more aliens or tighter spacing.
+
+4. **Touch / Mobile Input**
+   - Add support for touch or on-screen buttons if you're planning for mobile.
+
+5. **Pause Functionality**
+   - Press a key to pause the game.
+
+6. **Save High Score**
+   - Save and load best score between runs.
+
+---
+
+Would you like help planning out any of these in detail or want me to help implement one of them next?
