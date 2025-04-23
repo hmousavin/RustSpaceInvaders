@@ -26,15 +26,15 @@ You're off to a great start. Here's a list of essential and common features that
 
 3. **Lives and Game Over**
    ✅ Track cannon's lives.
-   - Display game over when all lives are lost or when aliens reach the bottom.
+   ✅ Display game over when all lives are lost or when aliens reach the bottom.
 
 4. **Win Condition**
-   - Win when all aliens are eliminated.
-   - Show "You Win" screen or message.
+   ✅ Win when all aliens are eliminated.
+   ✅ Show "You Win" screen or message.
 
 5. **Score System**
    ✅ Add a score counter.
-   - Different alien types can give different scores.
+   ✅ Different alien types can give different scores.
 
 6. **Levels or Waves**
    - After clearing aliens, spawn new wave with different patterns, speed, or more complexity.
