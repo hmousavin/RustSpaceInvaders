@@ -20,9 +20,6 @@ enum AppState {
     Victory,
 }
 
-// #[derive(Resource, PartialEq, Eq)]
-// struct CurrentAppState;
-
 #[derive(Event)]
 struct AppStateEvent(AppState);
 
