@@ -1,14 +1,14 @@
-use std::{ops::Mul, time::Duration};
+use std::{fs, time::Duration};
 
 use bevy::{
-    prelude::*,
-    render::{
+    prelude::*, render::{
         settings::{Backends, RenderCreation, WgpuSettings},
         RenderPlugin,
-    },
-    window::ExitCondition,
+    }, transform, window::ExitCondition
 };
 use rand::seq::IndexedRandom;
+use ron::from_str;
+use serde::Deserialize;
 
 const CANNON_STEP: f32 = 10.;
 const BASE_ALIEN_SCORE: usize = 10;
@@ -110,6 +110,11 @@ struct AlienWaitToShoot {
     secs: Timer,
 }
 
+#[derive(Resource)]
+struct Difficulty {
+    level: usize
+}
+
 #[derive(PartialEq, Eq)]
 enum EventTypes {
     CannonLives,
@@ -125,64 +130,57 @@ struct HudLivesText;
 #[derive(Component)]
 struct HudScoreText;
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<&Window>) {
-    let screen_width = window.resolution.width();
-    let screen_height = window.resolution.height();
-    let margin_top: f32 = screen_height / 30.;
-    let margin_bottom: f32 = screen_height / 30.;
-    let sprite_pad: f32 = screen_width / 10.;
+fn get_sprite_from_symbol(sym: char, x: f32, y: f32, asset_server: &AssetServer) -> (Sprite, Transform, Alien)  {
+    let sprite = match sym {
+        'S' => Sprite::from_image(asset_server.load("squid.png")),
+        'C' => Sprite::from_image(asset_server.load("crab.png")),
+        'O' => Sprite::from_image(asset_server.load("octopus.png")),
+        'U' => Sprite::from_image(asset_server.load("ufo.png")),
+        _ => panic!("Unrecognized symbol: {}", sym),
+    };
 
-    commands.spawn(Camera2d);
+    let transform = Transform::from_xyz(x, y, 0.);
 
-    let bottom = (-screen_height / 2.) + margin_bottom;
-    commands.spawn((
-        Sprite::from_image(asset_server.load("cannon.png")),
-        Transform::from_xyz(0., bottom, 0.),
-        Cannon { lives: 3, score: 0 },
-    ));
-
-    for i in -3..4 {
-        commands.spawn((
-            Sprite::from_image(asset_server.load("squid.png")),
-            Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(8.), 0.),
-            Alien {
-                kind_of: AlienType::Squid,
-                score_value: 3 * BASE_ALIEN_SCORE,
-            },
-        ));
-
-        commands.spawn((
-            Sprite::from_image(asset_server.load("crab.png")),
-            Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(4.), 0.),
-            Alien {
-                kind_of: AlienType::Crab,
-                score_value: 2 * BASE_ALIEN_SCORE,
-            },
-        ));
-
-        commands.spawn((
-            Sprite::from_image(asset_server.load("octopus.png")),
-            Transform::from_xyz(sprite_pad.mul(i as f32), margin_top, 0.),
-            Alien {
-                kind_of: AlienType::Octopus,
-                score_value: BASE_ALIEN_SCORE,
-            },
-        ));
-    }
-
-    commands.spawn((
-        Sprite::from_image(asset_server.load("ufo.png")),
-        Transform::from_xyz(
-            (-screen_width / 2.) + sprite_pad, // just for demonstraction
-            (screen_height / 2.) - sprite_pad,
-            0.,
-        ),
-        Alien {
+    let alien = match sym {
+        'S' => Alien {
+            kind_of: AlienType::Squid,
+            score_value: 1 * BASE_ALIEN_SCORE,
+        },
+        'C' => Alien {
+            kind_of: AlienType::Crab,
+            score_value: 2 * BASE_ALIEN_SCORE,
+        },
+        'O' => Alien {
+            kind_of: AlienType::Octopus,
+            score_value: 3 * BASE_ALIEN_SCORE,
+        },
+        'U' => Alien {
             kind_of: AlienType::UFO,
             score_value: 5 * BASE_ALIEN_SCORE,
         },
-    ));
+        _ => panic!("Unrecognized symbol: {}", sym),
 
+    };
+
+    (sprite, transform, alien)
+}
+
+#[derive(Debug, Deserialize)]
+struct AlienWave {
+    level: u8,
+    pattern: Vec<Vec<char>>,
+}
+
+fn setup(
+    mut commands: Commands, 
+    asset_server: Res<AssetServer>, 
+    difficulty: Res<Difficulty>,
+    window: Single<&Window>,) 
+{
+    commands.spawn(Camera2d);
+
+    render_sprites(&mut commands, asset_server, difficulty, window);
+    
     let hud_root = commands
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -196,6 +194,36 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
     let lives = commands.spawn((Text::new("lives: 3"), HudLivesText)).id();
     let score = commands.spawn((Text::new("score: 0"), HudScoreText)).id();
     commands.entity(hud_root).add_children(&[lives, score]);
+}
+
+fn render_sprites(commands: &mut Commands<'_, '_>, asset_server: Res<'_, AssetServer>, difficulty: Res<'_, Difficulty>, window: Single<'_, &Window>) {
+    let screen_width = window.resolution.width();
+    let screen_height = window.resolution.height();
+    let margin_top: f32 = screen_height / 30.;
+    let margin_bottom: f32 = screen_height / 30.;
+    let sprite_pad: f32 = screen_width / 10.;
+    let bottom = (-screen_height / 2.) + margin_bottom;
+    
+    commands.spawn((
+        Sprite::from_image(asset_server.load("cannon.png")),
+        Transform::from_xyz(0., bottom, 0.),
+        Cannon { lives: 3, score: 0 },
+    ));
+
+    let ron_string = fs::read_to_string("assets/levels.ron").unwrap();
+    let assets: Vec<AlienWave> = from_str(&ron_string).unwrap();
+    
+    for (row_idx, row) in assets[difficulty.level - 1].pattern.iter().enumerate() {
+        for (col_idx, &ch) in row.iter().enumerate() {
+            if ch == '.' { continue; } // skip empty space
+
+            let x = (col_idx as f32 - row.len() as f32 / 2.0) * sprite_pad;
+            let y = screen_height / 2.0 - margin_top - (row_idx as f32 * sprite_pad);
+
+            let (sprite, transform, alien) = get_sprite_from_symbol(ch, x, y, &asset_server);
+            commands.spawn((sprite, transform, alien));
+        }
+    }
 }
 
 fn handle_inputs(
@@ -447,7 +475,8 @@ fn refresh_hud(
 fn toggle_system_state(
     mut ev_list: EventReader<AppStateEvent>, 
     mut commands: Commands, 
-    mut next_state: ResMut<NextState<AppState>>) 
+    mut next_state: ResMut<NextState<AppState>>,
+    mut difficulty: ResMut<Difficulty>,) 
 {
     for e_type in ev_list.read() {
         let text = Text::new(
@@ -470,8 +499,11 @@ fn toggle_system_state(
 
         match e_type.0 {
             AppState::GameOver => next_state.set(AppState::GameOver),
-            AppState::Victory => next_state.set(AppState::Victory),
-                _ => next_state.set(AppState::Playing),
+            AppState::Victory => {
+                next_state.set(AppState::Victory);
+                difficulty.level += 1;
+            },
+            _ => next_state.set(AppState::Playing),
         }
     }
 }
@@ -493,6 +525,7 @@ fn main() {
                     ..Default::default()
                 }),
         )
+        .insert_resource(Difficulty{level: 1})
         .insert_resource(AlienMoveDirection {
             dir: Direction::Right,
         })
