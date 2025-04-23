@@ -11,6 +11,20 @@ use bevy::{
 use rand::seq::IndexedRandom;
 
 const CANNON_STEP: f32 = 10.;
+const BASE_ALIEN_SCORE: usize = 10;
+
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
+enum AppState {
+    Playing,
+    GameOver,
+    Victory,
+}
+
+// #[derive(Resource, PartialEq, Eq)]
+// struct CurrentAppState;
+
+#[derive(Event)]
+struct AppStateEvent(AppState);
 
 #[derive(Component)]
 struct BoundingBox {
@@ -46,7 +60,7 @@ enum AlienType {
 #[derive(Component)]
 struct Alien {
     kind_of: AlienType,
-    // score_value: usize, // should be randomized: 50, 100, 150, 300
+    score_value: usize, 
 }
 
 fn get_alien_bounding_box(alien_type: AlienType) -> BoundingBox {
@@ -136,6 +150,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(8.), 0.),
             Alien {
                 kind_of: AlienType::Squid,
+                score_value: 3 * BASE_ALIEN_SCORE,
             },
         ));
 
@@ -144,6 +159,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top.mul(4.), 0.),
             Alien {
                 kind_of: AlienType::Crab,
+                score_value: 2 * BASE_ALIEN_SCORE,
             },
         ));
 
@@ -152,6 +168,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
             Transform::from_xyz(sprite_pad.mul(i as f32), margin_top, 0.),
             Alien {
                 kind_of: AlienType::Octopus,
+                score_value: BASE_ALIEN_SCORE,
             },
         ));
     }
@@ -165,6 +182,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<
         ),
         Alien {
             kind_of: AlienType::UFO,
+            score_value: 5 * BASE_ALIEN_SCORE,
         },
     ));
 
@@ -295,7 +313,8 @@ fn check_collisions(
     balls: Query<(Entity, &Transform, &Ball)>,
     aliens: Query<(Entity, &Transform, &Alien)>,
     mut single_cannon: Single<(Entity, &Transform, &mut Cannon)>,
-    mut event_writer: EventWriter<HudEvent>,
+    mut hud_ew: EventWriter<HudEvent>,
+    mut app_state_ew: EventWriter<AppStateEvent>,
 ) {
     for (ball_entity, ball_transform, ball) in balls.iter() {
         let ball_pos = ball_transform.translation;
@@ -332,10 +351,15 @@ fn check_collisions(
                         commands.entity(alien_entity).despawn();
                         commands.entity(ball_entity).despawn();
 
-                        single_cannon.2.score += 10;
-                        event_writer.send(HudEvent(EventTypes::Score, single_cannon.2.score));
+                        single_cannon.2.score += alien.score_value;
+                        hud_ew.send(HudEvent(EventTypes::Score, single_cannon.2.score));
+
                         break;
                     }
+                }
+            
+                if aliens.is_empty() {
+                    app_state_ew.send(AppStateEvent(AppState::Victory));
                 }
             }
 
@@ -344,8 +368,8 @@ fn check_collisions(
                 let cannon_pos = cannon_transform.translation;
 
                 let cannon_bb = BoundingBox {
-                    width: 40.0,
-                    height: 32.0,
+                    width: 60.0,
+                    height: 30.0,
                 }; // Replace with actual values if you store them
 
                 let cannon_min_x = cannon_pos.x - cannon_bb.width / 2.0;
@@ -367,10 +391,10 @@ fn check_collisions(
 
                     if cannon.lives > 0 {
                         cannon.lives = cannon.lives - 1;
-                        event_writer.send(HudEvent(EventTypes::CannonLives, cannon.lives));
+                        hud_ew.send(HudEvent(EventTypes::CannonLives, cannon.lives));
                     }
                     else {
-                        warn!("Game over!");
+                        app_state_ew.send(AppStateEvent(AppState::GameOver));
                     }
                     break;
                 }
@@ -423,6 +447,38 @@ fn refresh_hud(
     }
 }
 
+fn toggle_system_state(
+    mut ev_list: EventReader<AppStateEvent>, 
+    mut commands: Commands, 
+    mut next_state: ResMut<NextState<AppState>>) 
+{
+    for e_type in ev_list.read() {
+        let text = Text::new(
+            match e_type.0 {
+                AppState::GameOver => "Game Over",
+                AppState::Victory => "You win !",
+                _ => "",
+            }
+        );
+        
+        commands.spawn(
+            (
+            text,    
+            Node {
+                align_content: AlignContent::Center,
+                margin: UiRect::all(Val::Auto),
+                ..default()
+            }
+        ));
+
+        match e_type.0 {
+            AppState::GameOver => next_state.set(AppState::GameOver),
+            AppState::Victory => next_state.set(AppState::Victory),
+                _ => next_state.set(AppState::Playing),
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(
@@ -447,6 +503,7 @@ fn main() {
             secs: Timer::new(Duration::from_secs(3), TimerMode::Repeating),
         })
         .add_event::<HudEvent>()
+        .add_event::<AppStateEvent>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -455,9 +512,12 @@ fn main() {
                 refresh_aliens,
                 aliens_attack,
                 refresh_balls,
+                check_collisions,
                 refresh_hud,
-            ),
+                toggle_system_state,
+            ).run_if(in_state(AppState::Playing)),
         )
-        .add_systems(FixedUpdate, check_collisions)
+        .insert_state(AppState::Playing)
         .run();
+
 }
