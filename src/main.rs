@@ -4,7 +4,7 @@ use bevy::{
     prelude::*, render::{
         settings::{Backends, RenderCreation, WgpuSettings},
         RenderPlugin,
-    }, transform, window::ExitCondition
+    }, window::ExitCondition
 };
 use rand::seq::IndexedRandom;
 use ron::from_str;
@@ -22,6 +22,14 @@ enum AppState {
 
 #[derive(Event)]
 struct AppStateEvent(AppState);
+
+enum MissionResult {
+    Restart, 
+    Advance,
+}
+
+#[derive(Event)]
+struct ChangeMissionEvent(MissionResult);
 
 #[derive(Component)]
 struct BoundingBox {
@@ -118,7 +126,7 @@ struct Difficulty {
 #[derive(PartialEq, Eq)]
 enum EventTypes {
     CannonLives,
-    Score,
+    Score
 }
 
 #[derive(Event)]
@@ -129,6 +137,9 @@ struct HudLivesText;
 
 #[derive(Component)]
 struct HudScoreText;
+
+#[derive(Component)]
+struct HudLevelText;
 
 fn get_sprite_from_symbol(sym: char, x: f32, y: f32, asset_server: &AssetServer) -> (Sprite, Transform, Alien)  {
     let sprite = match sym {
@@ -167,7 +178,6 @@ fn get_sprite_from_symbol(sym: char, x: f32, y: f32, asset_server: &AssetServer)
 
 #[derive(Debug, Deserialize)]
 struct AlienWave {
-    level: u8,
     pattern: Vec<Vec<char>>,
 }
 
@@ -179,8 +189,12 @@ fn setup(
 {
     commands.spawn(Camera2d);
 
-    render_sprites(&mut commands, asset_server, difficulty, window);
+    render_sprites(&mut commands, &asset_server, difficulty.level, &window);
     
+    write_on_hud(commands, "lives: 3", "score: 0", "level: 1");
+}
+
+fn write_on_hud(mut commands: Commands<'_, '_>, lives_text: &str, score_text: &str, level_text: &str) {
     let hud_root = commands
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -191,12 +205,13 @@ fn setup(
         })
         .id();
 
-    let lives = commands.spawn((Text::new("lives: 3"), HudLivesText)).id();
-    let score = commands.spawn((Text::new("score: 0"), HudScoreText)).id();
-    commands.entity(hud_root).add_children(&[lives, score]);
+    let lives = commands.spawn((Text::new(lives_text), HudLivesText)).id();
+    let score = commands.spawn((Text::new(score_text), HudScoreText)).id();
+    let level = commands.spawn((Text::new(level_text), HudLevelText)).id();
+    commands.entity(hud_root).add_children(&[lives, score, level]);
 }
 
-fn render_sprites(commands: &mut Commands<'_, '_>, asset_server: Res<'_, AssetServer>, difficulty: Res<'_, Difficulty>, window: Single<'_, &Window>) {
+fn render_sprites(commands: &mut Commands<'_, '_>, asset_server: &AssetServer, difficulty_level: usize, window: &Window) {
     let screen_width = window.resolution.width();
     let screen_height = window.resolution.height();
     let margin_top: f32 = screen_height / 30.;
@@ -213,7 +228,7 @@ fn render_sprites(commands: &mut Commands<'_, '_>, asset_server: Res<'_, AssetSe
     let ron_string = fs::read_to_string("assets/levels.ron").unwrap();
     let assets: Vec<AlienWave> = from_str(&ron_string).unwrap();
     
-    for (row_idx, row) in assets[difficulty.level - 1].pattern.iter().enumerate() {
+    for (row_idx, row) in assets[difficulty_level - 1].pattern.iter().enumerate() {
         for (col_idx, &ch) in row.iter().enumerate() {
             if ch == '.' { continue; } // skip empty space
 
@@ -339,7 +354,7 @@ fn check_collisions(
     aliens: Query<(Entity, &Transform, &Alien)>,
     mut single_cannon: Single<(Entity, &Transform, &mut Cannon)>,
     mut hud_ew: EventWriter<HudEvent>,
-    mut app_state_ew: EventWriter<AppStateEvent>,
+    mut mission_ew: EventWriter<ChangeMissionEvent>,
 ) {
     for (ball_entity, ball_transform, ball) in balls.iter() {
         let ball_pos = ball_transform.translation;
@@ -383,9 +398,9 @@ fn check_collisions(
                     }
                 }
             
-                if aliens.is_empty() {
-                    app_state_ew.send(AppStateEvent(AppState::Victory));
-                }
+                // if aliens.is_empty() {
+                //     mission_ew.send(ChangeMissionEvent(MissionResult::Advance));
+                // }
             }
 
             BallType::AlienBall => {
@@ -419,7 +434,7 @@ fn check_collisions(
                         hud_ew.send(HudEvent(EventTypes::CannonLives, cannon.lives));
                     }
                     else {
-                        app_state_ew.send(AppStateEvent(AppState::GameOver));
+                        mission_ew.send(ChangeMissionEvent(MissionResult::Restart));
                     }
                     break;
                 }
@@ -482,7 +497,7 @@ fn toggle_system_state(
         let text = Text::new(
             match e_type.0 {
                 AppState::GameOver => "Game Over",
-                AppState::Victory => "You win !",
+                AppState::Victory => "You win !", 
                 _ => "",
             }
         );
@@ -505,6 +520,61 @@ fn toggle_system_state(
             },
             _ => next_state.set(AppState::Playing),
         }
+    }
+}
+
+fn check_wave_clear(
+    alien_query: Query<Entity, With<Alien>>,
+    mut mission_ew: EventWriter<ChangeMissionEvent>,
+    mut sent: Local<bool>, // Local memory for this system
+) {
+    if alien_query.is_empty() && !*sent {
+        mission_ew.send(ChangeMissionEvent(MissionResult::Advance));
+        *sent = true;
+        
+    } else if !alien_query.is_empty() {
+        *sent = false;
+    }
+}
+
+fn toggle_mission_result(
+    mut mission_ev: EventReader<ChangeMissionEvent>,
+    mut commands: Commands,
+    mut difficulty: ResMut<Difficulty>,
+    asset_server: Res<AssetServer>, 
+    window: Single<&Window>,
+    cannon_query: Query<Entity, With<Cannon>>,
+    alien_query: Query<Entity, With<Alien>>,
+    ball_query: Query<Entity, With<Ball>>,
+) {
+    for ev in mission_ev.read() {
+        match ev.0 {
+            MissionResult::Advance => { 
+                difficulty.level += 1; 
+                commands.insert_resource(Difficulty{level: difficulty.level});
+            } 
+            MissionResult::Restart => { difficulty.level = 1; }
+        }
+
+        for entity in cannon_query.iter() {
+            if commands.get_entity(entity).is_some() {
+                commands.entity(entity).try_despawn();
+            }
+        }
+
+        for entity in alien_query.iter() {
+            if commands.get_entity(entity).is_some() {
+                commands.entity(entity).try_despawn();
+            }
+        }
+
+        for entity in ball_query.iter() {
+            if commands.get_entity(entity).is_some() {
+                commands.entity(entity).try_despawn();
+            }
+        }
+
+        render_sprites(&mut commands, &asset_server, difficulty.level, &window);
     }
 }
 
@@ -533,7 +603,7 @@ fn main() {
             secs: Timer::new(Duration::from_secs(3), TimerMode::Repeating),
         })
         .add_event::<HudEvent>()
-        .add_event::<AppStateEvent>()
+        .add_event::<ChangeMissionEvent>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -543,8 +613,9 @@ fn main() {
                 aliens_attack,
                 refresh_balls,
                 check_collisions,
+                toggle_mission_result.after(check_collisions),
+                check_wave_clear.after(toggle_mission_result),
                 refresh_hud,
-                toggle_system_state,
             ).run_if(in_state(AppState::Playing)),
         )
         .insert_state(AppState::Playing)
